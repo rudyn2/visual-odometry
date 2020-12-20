@@ -1,14 +1,14 @@
 from datetime import datetime
+import pickle
+import cv2 as cv
 
 if __name__ == '__main__':
-    fn = r'C:\Users\Rudy\PycharmProjects\visual-odometry\2011_09_26\2011_09_26\2011_09_26_drive_0001_sync\image_00' \
-         r'\timestamps.txt '
 
-    def read_timestamps_from_file(file_path: str) -> list:
-        with open(file_path, 'r') as f:
-            ts = []
-            for line in f.readlines():
-                d = datetime.strptime(line[:-4], '%Y-%m-%d %H:%M:%S.%f')
-                ts.append(d)
+    with open('calibration_results.pkl', 'rb') as input:
+        cal_data = pickle.load(input)
+    img = cv.imread('2011_09_26/2011_09_26/2011_09_26_drive_0119_extract/image_00/data/0000000000.png')
+    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 
-        return ts
+    objpoints = cal_data['obj']
+    imgpoints = cal_data['img']
+    ret, mtx, dist, rvecs, tvecs = cv.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)

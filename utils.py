@@ -43,7 +43,7 @@ class ToolBox:
 
 
 if __name__ == '__main__':
-    folder_path = r'2011_09_26\2011_09_26\2011_09_26_drive_0001_sync\image_03/data'
+    folder_path = r'2011_09_26\2011_09_26_drive_0001_sync\image_03/data'
     frames = [cv2.imread(os.path.join(folder_path, rf'0000000{str(i).zfill(3)}.png')) for i in range(108)]
     timestamps = ToolBox.read_timestamps_from_file(r'C:\Users\Rudy\PycharmProjects\visual-odometry\2011_09_26'
                                                    r'\2011_09_26\2011_09_26_drive_0001_sync\image_03\timestamps.txt')
