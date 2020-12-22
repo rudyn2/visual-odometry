@@ -218,7 +218,10 @@ def draw_motion(img_to_plot, kp_ref, kp_query, matches):
 if __name__ == '__main__':
     from extract_keypoints import SerializableKp
     import os
-    video = '2011_09_26/2011_09_26_drive_0001_sync/image_00/'
+    import glob
+
+    # video = '2011_09_26/2011_09_26_drive_0001_sync/image_00/'
+    video = '2011_09_30/2011_09_30_drive_0016_sync/image_00'
     with open(os.path.join('keypoints', video, 'sift_keypoints.pkl'), 'rb') as f:
         kps = pickle.load(f)
 
@@ -226,19 +229,15 @@ if __name__ == '__main__':
     pre_kp = SerializableKp.serializable2cv(kps['0000000000.png']['kp'])
     pre_des = kps['0000000000.png']['des']
 
-    for idx in range(1, 108):
+    for idx in range(1, len(glob.glob(os.path.join(img_path, '*.png')))):
         actual_frame_path = os.path.join(img_path, rf'0000000{str(idx).zfill(3)}.png')
         actual_frame = cv2.imread(actual_frame_path)
 
         actual_kp = SerializableKp.serializable2cv(kps[os.path.basename(actual_frame_path)]['kp'])
         actual_des = kps[os.path.basename(actual_frame_path)]['des']
 
-        # sift = cv2.SIFT_create()
-        # kp, des = sift.detectAndCompute(cv2.imread(actual_frame_path, 0), None)
-
         kp1, kp2, matches = detect(pre_kp, actual_kp, pre_des, actual_des)
-        # kp1, kp2, matches = detect(actual_kp, pre_kp, actual_des, pre_des)
-        # actual_frame = cv2.cvtColor(actual_frame, cv2.COLOR_BGR2GRAY)
+
         draw_motion(actual_frame, kp1, kp2, matches)
         cv2.imshow('Motion', actual_frame)
         cv2.waitKey(50)

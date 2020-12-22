@@ -3,6 +3,9 @@ import cv2
 import pickle
 import numpy as np
 import os
+from compare_calibration import read_real_cal_matrix
+from extract_keypoints import SerializableKp
+from feature_matching import detect, draw_motion
 
 
 def process_kp(kp_list: list):
@@ -23,40 +26,90 @@ def filter_kp(kp1: list, kp2: list, matches: list):
     return np.array(points1), np.array(points2)
 
 
+class VO:
+    def __init__(self, video: str, cal_path: str, kp_path: str, video_prefix: str = 'data', kp_prefix: str = 'keypoints'):
+
+        # load keypoints
+        with open(os.path.join(kp_prefix, kp_path), 'rb') as f:
+            self.kps = pickle.load(f)
+
+        # load calibration matrix
+        self.camera_matrix, _ = read_real_cal_matrix(cal_path)
+
+        # frames directory
+        self.img_path = os.path.join(video_prefix, video, 'data')
+
+        # init first image and its keypoints, descriptors
+        self.pre_img_path = os.path.join(self.img_path, '0000000000.png')
+        self.pre_kp = SerializableKp.serializable2cv(self.kps['0000000000.png']['kp'])
+        self.pre_des = self.kps['0000000000.png']['des']
+        self.actual_idx = 1
+        self.last_frame = len(os.listdir(self.img_path))
+
+        # position tracking
+        self.pos = np.ones((4, 1))
+
+    def step(self, method: str = 'five-points'):
+        if self.actual_idx < self.last_frame:
+            actual_frame_path = os.path.join(self.img_path, rf'0000000{str(self.actual_idx).zfill(3)}.png')
+            actual_frame = cv2.imread(actual_frame_path)
+            actual_frame_copy = np.copy(actual_frame)
+
+            # load the keypoints and descriptors
+            actual_kp = SerializableKp.serializable2cv(self.kps[os.path.basename(actual_frame_path)]['kp'])
+            actual_des = self.kps[os.path.basename(actual_frame_path)]['des']
+
+            # match them
+            kp1, kp2, matches = detect(self.pre_kp, actual_kp, self.pre_des, actual_des)
+
+            # draw motion arrows in actual frame
+            draw_motion(actual_frame, kp1, kp2, matches)
+
+            # estimate motion
+            points1, points2 = filter_kp(kp1, kp2, matches)
+
+            if method == 'five-points':
+                E, mask = cv2.findEssentialMat(points1, points2, self.camera_matrix, method=cv2.RANSAC,
+                                               prob=0.999, threshold=1.0)
+                _, R, t, _ = cv2.recoverPose(E, points1, points2, cameraMatrix=self.camera_matrix)
+                T = np.vstack([np.hstack([R, t]), [0, 0, 0, 1]])
+            self.pos = T @ self.pos
+            x, y = self.pos[0][0], self.pos[2][0]
+            print(f"{x:.3f}, {y:.3f}")
+
+            self.pre_kp = actual_kp
+            self.pre_des = actual_des
+            self.pre_img_path = actual_frame_path
+
+            self.actual_idx += 1
+
+            # return raw frame, motion frame, and predicted camera position
+            return actual_frame_copy, actual_frame, (x, y)
+        else:
+            return None, None, None
+
+
 if __name__ == '__main__':
-    # read calculated calibration parameters
-    calculated_cal_path = 'calibration_results.pkl'
-    experimental_cal_path = 'data/2011_09_26/calib_cam_to_cam.txt'
-    with open(calculated_cal_path, 'rb') as f:
-        cal_data = pickle.load(f)
-    camera_matrix = cal_data['K']
 
-    img_path = 'data/2011_09_26/2011_09_26_drive_0005_sync/image_00/data'
-    pre_img_path = os.path.join(img_path, rf'0000000000.png')
-    pos = np.zeros((3, 1))
+    date = '2011_09_26'
+    id = '0005'
+    video = f'{date}/{date}_drive_{id}_sync/image_00/'
+    keypoints = f'{date}/{date}_drive_{id}_sync/image_00/sift_keypoints.pkl'
+    experimental_cal_path = f'data/{date}/calib_cam_to_cam.txt'
+    v = VO(video, experimental_cal_path, keypoints)
+
     traj = np.zeros((600, 600, 3), dtype=np.uint8)
+    raw_frame, motion_frame, pos = v.step()
+    while pos:
+        x_pos, y_pos = int(pos[0] + 300), int(pos[1] + 300)
+        # print(f"Pos: {x_pos}, {y_pos}")
+        cv2.circle(traj, (x_pos, traj.shape[1] - y_pos), 1, (255, 0, 0), 1)
 
-    for idx in range(1, 153):
-        actual_frame_path = os.path.join(img_path, rf'0000000{str(idx).zfill(3)}.png')
-        img1, kp1, img2, kp2, matches = detect(pre_img_path, actual_frame_path, method='hough')
-        points1, points2 = filter_kp(kp1, kp2, matches)
-
-        # Estimate motion
-        E, mask = cv2.findEssentialMat(points1, points2, camera_matrix,  method=cv2.RANSAC,
-                                       prob=0.999, threshold=1.0)
-        _, R, t, _ = cv2.recoverPose(E, points1, points2, cameraMatrix=camera_matrix)
-        # T = np.vstack([np.hstack([R, t]), [0, 0, 0, 1]])
-        pos = R @ (pos - t)
-        x, y, z = pos[0], pos[1], pos[2]
-
-        draw_x, draw_y = int(x) + 300, int(z) + 400
-        cv2.circle(traj, (draw_x, draw_y), 1, (255, 0, 0), 1)
-        cv2.rectangle(traj, (10, 20), (600, 60), (0, 0, 0), -1)
-        text = "Coordinates: x=%2fm y=%2fm z=%2fm" % (x, y, z)
-        cv2.putText(traj, text, (20, 40), cv2.FONT_HERSHEY_PLAIN, 1, (255, 255, 255), 1, 8)
-
-        cv2.imshow('Real', cv2.imread(actual_frame_path))
+        # show images
+        cv2.imshow('Motion', motion_frame)
+        cv2.imshow('Real', raw_frame)
         cv2.imshow('Trajectory', traj)
-        cv2.waitKey(1)
+        cv2.waitKey(50)
 
-        pre_img_path = actual_frame_path
+        raw_frame, motion_frame, pos = v.step()
+
