@@ -2,17 +2,31 @@ import PySimpleGUI as sg
 import cv2
 import numpy as np
 import os
+import glob
+from feature_matching import detect, draw_motion
+from tqdm import tqdm
 
 
-def main():
-    folder_path = r'2011_09_26\2011_09_26\2011_09_26_drive_0001_sync\image_03/data'
-    frames = [cv2.imread(os.path.join(folder_path, rf'0000000{str(i).zfill(3)}.png')) for i in range(108)]
+def main(input_dir):
+    pre = None
+    motion_frames = []
+    for idx, image in tqdm(enumerate(glob.glob(os.path.join(input_dir, "*.png"))), "Processing"):
+        if idx > 0:
+            img1, kp1, img2, kp2, matches = detect(pre, image, method='hough')
+            img2 = cv2.cvtColor(img2, cv2.COLOR_GRAY2BGR)
+            motion_frame = draw_motion(img2, kp1, kp2, matches)
+            motion_frames.append(motion_frame)
+        else:
+            motion_frames.append(cv2.imread(image))
+        pre = image
     sg.theme("LightGreen")
 
     # Define the window layout
     layout = [
-        [sg.Text("OpenCV Demo", size=(60, 1), justification="center")],
-        [sg.Image(filename="", key="-IMAGE-")],
+        [sg.Text("Video original", size=(60, 1), justification="center")],
+        [sg.Image(filename="", key="-IMAGE1-")],
+        [sg.Text("Visualización Keypoints matching", size=(60, 1), justification="center")],
+        [sg.Image(filename="", key="-IMAGE2-")],
         # [sg.Radio("None", "Radio", True, size=(10, 1))],
         # [
         #     sg.Radio("threshold", "Radio", size=(10, 1), key="-THRESH-"),
@@ -87,11 +101,14 @@ def main():
         event, values = window.read(timeout=20)
         if event == "Exit" or event == sg.WIN_CLOSED:
             break
-        frame = frames[idx % len(frames)]
-        imgbytes = cv2.imencode(".png", frame)[1].tobytes()
-        window["-IMAGE-"].update(data=imgbytes)
+        motion_frame = motion_frames[idx % len(motion_frames)]
+        # window["-IMAGE1-"].update(data=cv2.imencode(".png", frame)[1].tobytes())
+        window["-IMAGE1-"].update(data=cv2.imencode(".png", motion_frame)[1].tobytes())
         idx += 1
 
     window.close()
 
-main()
+
+if __name__ == '__main__':
+    video_dir = 'data/2011_09_26/2011_09_26_drive_0001_sync/image_00/data'
+    main(video_dir)

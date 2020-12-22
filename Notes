@@ -1,0 +1,4 @@
+Calibración:
+
+-   Se usan bboxes ampliados (chessboards2.json) alcanzando un máximo de 1040 corners.
+-
