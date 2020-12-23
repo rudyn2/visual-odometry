@@ -9,13 +9,18 @@ def process_line(s: str, shape: tuple):
     return values
 
 
-def read_real_cal_matrix(cal_path: str):
+def read_real_cal_matrix(cal_path: str, n_cam: int = 0):
     # read dataset calibration parameters
+    offset_headers = 2
     with open(cal_path, 'r') as f:
         lines = f.readlines()
-    k_real = process_line(lines[3], (3, 3))
-    d_real = process_line(lines[4], (1, 5))
-    return k_real, d_real
+    s = process_line(lines[offset_headers + n_cam * 8], (2, 1))
+    s = int(s[0][0]), int(s[1][0])
+    k = process_line(lines[offset_headers + n_cam*8 + 1], (3, 3))
+    d = process_line(lines[offset_headers + n_cam*8 + 2], (1, 5))
+    R = process_line(lines[offset_headers + n_cam*8 + 3], (3, 3))
+    T = process_line(lines[offset_headers + n_cam*8 + 4], (3, 1))
+    return s, k, d, R, T
 
 
 if __name__ == '__main__':
@@ -27,7 +32,7 @@ if __name__ == '__main__':
         cal_data = pickle.load(f)
     k_cal = cal_data['K']
     d_cal = cal_data['D']
-    k_real, d_real = read_real_cal_matrix(experimental_cal_path)
+    k_real, d_real, _, _, _ = read_real_cal_matrix(experimental_cal_path)
 
 
     # compute RMSE
