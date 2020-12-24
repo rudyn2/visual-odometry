@@ -78,7 +78,7 @@ class VO:
         # position tracking
         self.pos = np.ones((4, 1))
 
-    def step(self, method: str = 'five-points'):
+    def step(self, method_match: str = 'hough', method_track: str = 'five-points'):
         if self.actual_idx < self.last_frame:
             actual_frame_path = os.path.join(self.left_camera_path, rf'0000000{str(self.actual_idx).zfill(3)}.png')
             actual_frame = cv2.imread(actual_frame_path)
@@ -89,7 +89,7 @@ class VO:
             actual_des = self.kps[os.path.basename(actual_frame_path)]['des']
 
             # match them
-            kp1, kp2, matches = detect(self.pre_kp, actual_kp, self.pre_des, actual_des)
+            kp1, kp2, matches = detect(self.pre_kp, actual_kp, self.pre_des, actual_des, method=method_match)
 
             # draw motion arrows in actual frame
             draw_motion(actual_frame, kp1, kp2, matches)
@@ -97,13 +97,13 @@ class VO:
             # estimate motion
             points1, points2 = filter_kp(kp1, kp2, matches)
 
-            if method == 'five-points':
+            if method_track == 'five-points':
                 E, mask = cv2.findEssentialMat(points1, points2, self.cal_matrix, method=cv2.RANSAC,
                                                prob=0.999, threshold=1.0)
                 _, R, t, _ = cv2.recoverPose(E, points1, points2, cameraMatrix=self.cal_matrix)
                 disparity_map = None
 
-            elif method == 'pnp':
+            elif method_track == 'pnp':
                 # read the calibration parameters
                 _, k1, d1, _, _ = read_real_cal_matrix(self.cal_path, n_cam=0)
                 s, k2, d2, rotation, translation = read_real_cal_matrix(self.cal_path, n_cam=1)
@@ -120,29 +120,27 @@ class VO:
                 r_frame = cv2.imread(pre_right_img_path)
 
                 # apply maps to each frame
-                # l_frame_map = cv2.remap(l_frame, l_transform1, l_transform2, None)
-                # r_frame_map = cv2.remap(r_frame, r_transform1, r_transform2, None)
+                l_frame_map = cv2.remap(l_frame, l_transform1, l_transform2, None)
+                r_frame_map = cv2.remap(r_frame, r_transform1, r_transform2, None)
 
                 # here we are not using the mapped frames
                 disparity_map = self.stereo.compute(l_frame, r_frame)
-                disparity_map = cv2.normalize(disparity_map, disparity_map, alpha=0, beta=255,
-                                              norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+                # disparity_map = cv2.normalize(disparity_map, disparity_map, alpha=0, beta=255,
+                #                               norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
 
                 # re-project to 3D space
-                # points_3d = cv2.reprojectImageTo3D(disparity_map, Q)
-                # points1_3d = np.array([points_3d[points1[idx, 1], points1[idx, 0]] for idx in range(points1.shape[0])])
-                # points1_3d = points1_3d[~np.isinf(points1_3d).any(axis=1)]
-                # R, t = cv2.solvePnPRansac(points1_3d, points2, self.cal_matrix, self.dist_matrix)
+                points_3d = cv2.reprojectImageTo3D(disparity_map, Q)
 
-                # just to adapt: THIS PART SHOULD BE DELETED
-                E, mask = cv2.findEssentialMat(points1, points2, self.cal_matrix, method=cv2.RANSAC,
-                                               prob=0.999, threshold=1.0)
-                _, R, t, _ = cv2.recoverPose(E, points1, points2, cameraMatrix=self.cal_matrix)
+                # select valid keypoints
+                points1_3d = np.array([points_3d[points1[idx, 1], points1[idx, 0]] for idx in range(points1.shape[0])])
+                mask = ~np.isinf(points1_3d).any(axis=1)
+                points1_3d = points1_3d[mask]
+                points2 = points2[mask].astype(np.float32)
 
-                # cv2.imshow('Left frame', l_frame)
-                # cv2.imshow('Disparity map', disparity_map)
-                # cv2.waitKey()
-                # cv2.destroyAllWindows()
+                # find rotation and translation  matrix
+                _, R, t, _ = cv2.solvePnPRansac(points1_3d, points2, self.cal_matrix, self.dist_matrix)
+                R, _ = cv2.Rodrigues(R, None)
+
             else:
                 raise Exception(f"Method {method} not allowed.")
 
@@ -178,7 +176,7 @@ if __name__ == '__main__':
     while pos:
         x_pos, y_pos = int(pos[0] + 300), int(pos[1] + 300)
         # print(f"Pos: {x_pos}, {y_pos}")
-        cv2.circle(traj, (x_pos, traj.shape[1] - y_pos), 1, (255, 0, 0), 1)
+        cv2.circle(traj, (x_pos, y_pos), 1, (255, 0, 0), 1)
 
         # show images
         cv2.imshow('Motion', motion_frame)

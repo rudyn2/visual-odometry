@@ -10,7 +10,7 @@ def process_line(s: str, shape: tuple):
 
 
 def read_real_cal_matrix(cal_path: str, n_cam: int = 0):
-    # read dataset calibration parameters
+    # read odometry calibration parameters
     offset_headers = 2
     with open(cal_path, 'r') as f:
         lines = f.readlines()
@@ -32,7 +32,7 @@ if __name__ == '__main__':
         cal_data = pickle.load(f)
     k_cal = cal_data['K']
     d_cal = cal_data['D']
-    k_real, d_real, _, _, _ = read_real_cal_matrix(experimental_cal_path)
+    s, k_real, d_real, _, _ = read_real_cal_matrix(experimental_cal_path)
 
 
     # compute RMSE

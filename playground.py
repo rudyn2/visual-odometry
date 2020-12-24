@@ -55,7 +55,8 @@ if __name__ == '__main__':
     disparity_map = stereo.compute(l_frame, r_frame)
     disparity_map = cv2.normalize(disparity_map, disparity_map, alpha=0, beta=255,
                                   norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-    points_3d = cv2.reprojectImageTo3D(disparity_map, Q)
+    # disparity_map = cv2.GaussianBlur(disparity_map, ksize=(3, 3), sigmaX=2)
+    points_3d = cv2.reprojectImageTo3D(disparity_map, Q, handleMissingValues=True)
 
     cv2.imshow('Left frame', l_frame)
     cv2.imshow('Disparity map', disparity_map)

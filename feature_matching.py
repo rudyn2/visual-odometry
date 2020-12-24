@@ -42,8 +42,8 @@ def ransac(matches, keypoints_query, keypoints_ref):
     accepted = []
     iterations = 0
     max_iterations = 100
-    error_threshold = 100
-    min_matches_in_consensus_to_accept = 30
+    error_threshold = 20
+    min_matches_in_consensus_to_accept = 10
 
     candidates = []
     while iterations < max_iterations:
@@ -203,7 +203,6 @@ def detect(kp_ref: list, kp_query: list, des_ref, des_query, method: str = 'houg
         raise ValueError(f"Method {method} not known. Available: ransac, hough.")
 
     return kp_ref, kp_query, accepted
-    # result = cv2.drawKeypoints(img_query, kp_query, None, color=(255, 255, 255), flags=cv2.DrawMatchesFlags_DEFAULT)
 
 
 def draw_motion(img_to_plot, kp_ref, kp_query, matches):
