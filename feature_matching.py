@@ -5,7 +5,6 @@ de Feature Matching usando Transformada de Hough y RANSAC
 
 
 import math
-import time
 import pickle
 import cv2
 import numpy as np
@@ -38,12 +37,13 @@ def transform_error(e, theta, tx, ty, keypoint_query, keypoint_reference):
     return np.linalg.norm(e * (rotation @ kp_ref_pos) + translation - kp_query_pos)
 
 
-def ransac(matches, keypoints_query, keypoints_ref):
+def ransac(matches, keypoints_query, keypoints_ref, **kwargs):
     accepted = []
-    iterations = 0
-    max_iterations = 100
-    error_threshold = 20
-    min_matches_in_consensus_to_accept = 10
+
+    iterations = kwargs['iterations']
+    max_iterations = kwargs['max_iterations']
+    error_threshold = kwargs['error_threshold']
+    min_matches_in_consensus_to_accept = kwargs['min_consensus']
 
     candidates = []
     while iterations < max_iterations:
@@ -71,27 +71,17 @@ def ransac(matches, keypoints_query, keypoints_ref):
 
     max_consensus = max(candidates, key=len)
     if len(max_consensus) > min_matches_in_consensus_to_accept:
-        print(f"At most {len(max_consensus)} matches in consensus were found. [accepted]")
         return max_consensus
-
-    print(f"At most {len(max_consensus)} matches in consensus were found. [not accepted]")
     return accepted
 
 
-def hough4d(matches, keypoints_query, keypoints_reference):
+def hough4d(matches, keypoints_query, keypoints_reference, **kwargs):
     stored = []
     # Parametros de Hough
-    dxBin = 60
-    dangBin = 30 * math.pi / 180
-    umbralvotos = 4
+    dxBin = kwargs['dxbin']
+    dangBin = kwargs['dangbin'] * math.pi / 180
+    umbralvotos = kwargs['umbralvotos']
     accepted = []
-
-    # Por hacer:
-    # Se debe recorrer todos los calces en "matches" y, para cada uno, calcular una
-    # transformación usando genTransform(), y luego calcular los índices de la celda i,j,k,z
-    # en la cual hay que hacer la votacion. Se recomienda usar un offset de 500 al acceder las celdas para evitar
-    # evaluar la matriz con indices negativos
-    # Los indices [i+500,j+500,k+500,z+500] se deben guardar en la lista "stored"
 
     for match in matches:
         e, theta, tx, ty = gen_transform(match, keypoints_query, keypoints_reference)
@@ -110,17 +100,14 @@ def hough4d(matches, keypoints_query, keypoints_reference):
     data = np.ones(len(stored))
     sm = sparse.COO(coords, data, shape=((2000,) * 4))
 
-    # Por hacer:
     # Calcular la maxima cantidad de votos usando np.max(sm.data)
     max_votes = np.max(sm.data)
     most_voted_cell_idxs = sm.coords[:, np.argmax(sm.data)]
+
     # Si la cantidad de votos es menor que un umbral, retornar una lista vacia
     if max_votes < umbralvotos:
         return []
 
-    # Luego, se debe recorrer nuevamente todos los calces en "matches" y calcular indices (i,j,k,z)
-    # La cantidad de votos para esa celda es: sm[i+500,j+500,k+500,z+500]
-    # Las correspondencias que voten por la celda mas votada se deben agregar a accepted
     for idx, match_cell in enumerate(stored):
         it_voted = [match_cell[i] == most_voted_cell_idxs[i] for i in range(len(match_cell))]
         if all(it_voted):
@@ -136,44 +123,6 @@ def adapt_point(x, y):
     ])
 
 
-def calc_afin(matches, keypoints_query, keypoints_reference):
-    # Inicializa matrices
-    A = np.zeros(shape=(0, 6))
-    b = np.zeros(shape=(0, 1))
-
-    # Se construye la matriz A y b que permitirán
-    # encontrar la transformación afín principal entre
-    # un conjunto de matches
-    for idx, match in enumerate(matches):
-        x_query, y_query = keypoints_query[match.queryIdx].pt
-        x_ref, y_ref = keypoints_reference[match.trainIdx].pt
-        A = np.vstack([A, adapt_point(x_query, y_query)])
-        b = np.vstack([b, np.array([
-            [x_ref],
-            [y_ref]
-        ])])
-
-    return np.linalg.inv(A.T @ A) @ (A.T @ b)
-
-
-def draw_proj_afin(transf, input1, input2):
-    # Dibuja un romboide que representa el rectangulo
-    # de la imagen "input2" proyectada en la imagen "input1"
-
-    # Proyecta esquinas de la imagen
-    upper_left_t = adapt_point(0, 0) @ transf
-    bottom_left_t = adapt_point(input1.shape[1] - 1, 0) @ transf
-    upper_right_t = adapt_point(0, input1.shape[0] - 1) @ transf
-    bottom_right = adapt_point(input1.shape[1] - 1, input1.shape[0] - 1) @ transf
-
-    # Dibuja un polígono a partir de las esquinas proyectadas
-    pts = np.array([upper_left_t, bottom_left_t, bottom_right, upper_right_t], np.int32)
-    pts = pts.reshape((-1, 1, 2))
-    cv2.polylines(input2, [pts], True, (255, 0, 0))
-
-    return input2
-
-
 def filter_matches(matches, kp1, kp2):
     # Apply ratio test
     points1 = []
@@ -181,35 +130,42 @@ def filter_matches(matches, kp1, kp2):
     good = []
 
     for m, n in matches:
-        if m.distance < 0.75 * n.distance:  # 0.75
+        if m.distance < 0.75 * n.distance:
             good.append(m)
             points1.append(kp1[m.queryIdx].pt)
             points2.append(kp2[m.trainIdx].pt)
     return np.array(points1), np.array(points2), good
 
 
-def detect(kp_ref: list, kp_query: list, des_ref, des_query, method: str = 'hough', save: bool = False):
+def detect(kp_ref: list, kp_query: list, des_ref, des_query, method: str = 'hough', base_matcher: str = 'flann', save: bool = False, **kwargs):
 
-    # create matches
-    bf = cv2.BFMatcher()
-    matches = bf.knnMatch(des_query, des_ref, k=2)
+    if base_matcher == 'brute-force':
+        matcher = cv2.BFMatcher()
+    elif base_matcher == 'flann':
+        index_params = dict(algorithm=1, trees=5)
+        search_params = dict(checks=100)  # or pass empty dictionary
+        matcher = cv2.FlannBasedMatcher(index_params, search_params)
+    else:
+        raise Exception(f"Base matcher {base_matcher} not found.")
+
+    matches = matcher.knnMatch(des_query, des_ref, k=2)
     points1, points2, good = filter_matches(matches, kp_query, kp_ref)
 
     if method == 'ransac':
-        accepted = ransac(good, kp_query, kp_ref)
+        accepted = ransac(good, kp_query, kp_ref, **kwargs)
     elif method == 'hough':
-        accepted = hough4d(good, kp_query, kp_ref)
+        accepted = hough4d(good, kp_query, kp_ref, **kwargs)
     else:
-        raise ValueError(f"Method {method} not known. Available: ransac, hough.")
+        accepted = good
 
     return kp_ref, kp_query, accepted
 
 
-def draw_motion(img_to_plot, kp_ref, kp_query, matches):
+def draw_motion(img_to_plot, kp_ref, kp_query, matches, color=(0, 255, 255)):
     for match in matches:
         pt2 = tuple(map(int, kp_ref[match.trainIdx].pt))
         pt1 = tuple(map(int, kp_query[match.queryIdx].pt))
-        cv2.arrowedLine(img_to_plot, pt1, pt2, (0, 255, 255), thickness=1, line_type=cv2.LINE_AA)
+        cv2.arrowedLine(img_to_plot, pt1, pt2, color, thickness=1, line_type=cv2.LINE_AA)
         # cv2.drawKeypoints(img_to_plot, kp_query, img_to_plot, color=(255, 0, 0), flags=cv2.DrawMatchesFlags_DEFAULT)
     return img_to_plot
 

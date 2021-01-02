@@ -1,7 +1,7 @@
 import glob
 import os
 import pickle
-
+from tqdm import tqdm
 import cv2 as cv
 
 
@@ -32,7 +32,7 @@ def extract_keypoints(img_dir: str, output_path: str, method: str):
     sift = cv.SIFT_create()
     orb = cv.ORB_create()
     kps = {}
-    for idx, image in enumerate(glob.glob(os.path.join(img_dir, "*.png"))):
+    for idx, image in tqdm(enumerate(glob.glob(os.path.join(img_dir, "*.png")))):
         image_ = cv.imread(image, 0)
         if method == 'sift':
             image_kp, image_descriptors = sift.detectAndCompute(image_, None)
@@ -57,7 +57,7 @@ def extract_keypoints(img_dir: str, output_path: str, method: str):
 
 
 if __name__ == '__main__':
-    img_dir = 'data/2011_09_26/2011_09_26_drive_0005_sync/image_00/data/'
-    detector = 'orb'
-    output_dir = f'keypoints/2011_09_26/2011_09_26_drive_0005_sync/image_00/{detector}_keypoints.pkl'
+    img_dir = 'data/2011_09_30/2011_09_30_drive_0020_sync/image_00/data/'
+    detector = 'sift'
+    output_dir = f'keypoints/2011_09_30/2011_09_30_drive_0020_sync/image_00/{detector}_keypoints.pkl'
     extract_keypoints(img_dir, output_dir, detector)
