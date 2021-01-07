@@ -9,6 +9,7 @@ import pickle
 import cv2
 import numpy as np
 import sparse
+import time
 
 
 def gen_transform(match, keypoints_query, keypoints_reference):
@@ -40,7 +41,7 @@ def transform_error(e, theta, tx, ty, keypoint_query, keypoint_reference):
 def ransac(matches, keypoints_query, keypoints_ref, **kwargs):
     accepted = []
 
-    iterations = kwargs['iterations']
+    iterations = 0
     max_iterations = kwargs['max_iterations']
     error_threshold = kwargs['error_threshold']
     min_matches_in_consensus_to_accept = kwargs['min_consensus']
@@ -137,7 +138,7 @@ def filter_matches(matches, kp1, kp2):
     return np.array(points1), np.array(points2), good
 
 
-def detect(kp_ref: list, kp_query: list, des_ref, des_query, method: str = 'hough', base_matcher: str = 'flann', save: bool = False, **kwargs):
+def detect(kp_ref: list, kp_query: list, des_ref, des_query, method: str = 'hough', base_matcher: str = 'brute-force', save: bool = False, **kwargs):
 
     if base_matcher == 'brute-force':
         matcher = cv2.BFMatcher()
@@ -151,12 +152,14 @@ def detect(kp_ref: list, kp_query: list, des_ref, des_query, method: str = 'houg
     matches = matcher.knnMatch(des_query, des_ref, k=2)
     points1, points2, good = filter_matches(matches, kp_query, kp_ref)
 
+    start = time.time()
     if method == 'ransac':
         accepted = ransac(good, kp_query, kp_ref, **kwargs)
     elif method == 'hough':
         accepted = hough4d(good, kp_query, kp_ref, **kwargs)
     else:
         accepted = good
+    print(f"{method}: {(time.time()-start):.2f} seconds.")
 
     return kp_ref, kp_query, accepted
 
@@ -166,7 +169,7 @@ def draw_motion(img_to_plot, kp_ref, kp_query, matches, color=(0, 255, 255)):
         pt2 = tuple(map(int, kp_ref[match.trainIdx].pt))
         pt1 = tuple(map(int, kp_query[match.queryIdx].pt))
         cv2.arrowedLine(img_to_plot, pt1, pt2, color, thickness=1, line_type=cv2.LINE_AA)
-        # cv2.drawKeypoints(img_to_plot, kp_query, img_to_plot, color=(255, 0, 0), flags=cv2.DrawMatchesFlags_DEFAULT)
+        # cv2.drawKeypoints(img_to_plot, kp_query, img_to_plot, flags=cv2.DRAW_MATCHES_FLAGS_DEFAULT)
     return img_to_plot
 
 
@@ -174,9 +177,10 @@ if __name__ == '__main__':
     from extract_keypoints import SerializableKp
     import os
     import glob
+    from configs import MatcherConfig
 
-    # video = '2011_09_26/2011_09_26_drive_0001_sync/image_00/'
-    video = '2011_09_30/2011_09_30_drive_0016_sync/image_00'
+    video = '2011_09_26/2011_09_26_drive_0005_sync/image_00/'
+    # video = '2011_09_30/2011_09_30_drive_0016_sync/image_00'
     with open(os.path.join('keypoints', video, 'sift_keypoints.pkl'), 'rb') as f:
         kps = pickle.load(f)
 
@@ -191,11 +195,11 @@ if __name__ == '__main__':
         actual_kp = SerializableKp.serializable2cv(kps[os.path.basename(actual_frame_path)]['kp'])
         actual_des = kps[os.path.basename(actual_frame_path)]['des']
 
-        kp1, kp2, matches = detect(pre_kp, actual_kp, pre_des, actual_des)
+        kp1, kp2, matches = detect(pre_kp, actual_kp, pre_des, actual_des, method='hough', **MatcherConfig.hough)
 
         draw_motion(actual_frame, kp1, kp2, matches)
         cv2.imshow('Motion', actual_frame)
-        cv2.waitKey(50)
+        cv2.waitKey(1)
 
         pre_kp = actual_kp
         pre_des = actual_des

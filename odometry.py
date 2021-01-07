@@ -9,7 +9,7 @@ from feature_matching import detect, draw_motion
 from configs import *
 
 
-def filter_kp(kp1: list, kp2: list, matches: list):
+def matches2list(kp1: list, kp2: list, matches: list):
     # list of matches to list of points
     points1, points2 = [None] * len(matches), [None] * len(matches)
     for idx, match in enumerate(matches):
@@ -63,11 +63,9 @@ class VO:
         # used only for 5-point algorithm
         _, self.cal_matrix, self.dist_matrix, _, _ = read_real_cal_matrix(cal_path, n_cam=0)
 
-        # used onl for pnp algorithm
+        # used only for pnp algorithm
         _, self.k1, self.d1, _, _ = read_real_cal_matrix(self.cal_path, n_cam=0)
         s, k2, d2, rotation, translation = read_real_cal_matrix(self.cal_path, n_cam=1)
-        self.k1, k2 = k2, self.k1
-        self.d1, d2 = d2, self.d1
 
         # find projections and maps
         R1, R2, P1, P2, self.Q, _, _ = cv2.stereoRectify(self.k1, self.d1, k2, d2, s, rotation, translation)
@@ -84,7 +82,10 @@ class VO:
         self.last_frame = len(os.listdir(self.left_camera_path))
 
         # position tracking
-        self.pos = np.ones((4, 1))
+        self.pos = np.array([0, 0, 0, 1])[:, np.newaxis]
+        self.initial = np.array([0, 0, 0, 1])[:, np.newaxis]
+        self.R = np.eye(3)
+        self.t = np.zeros((3, 1))
 
     def step(self, method_match: str = 'hough', method_track: str = 'five-points'):
         if self.actual_idx < self.last_frame:
@@ -104,61 +105,74 @@ class VO:
             draw_motion(actual_frame, kp1, kp2, matches)
 
             # estimate motion
-            points1, points2 = filter_kp(kp1, kp2, matches)
-
+            points1, points2 = matches2list(kp1, kp2, matches)
             if method_track == 'five-points':
-                E, mask = cv2.findEssentialMat(points1, points2, self.cal_matrix, method=cv2.RANSAC,
-                                               prob=0.999, threshold=1.0)
-                _, R, t, _ = cv2.recoverPose(E, points1, points2, cameraMatrix=self.cal_matrix, mask=mask)
+                self.step_five_points(points1, points2)
                 depth_map = None
 
             elif method_track == 'pnp':
-
-                # load left and right frame
-                l_frame = cv2.imread(self.pre_img_path)
-                pre_right_img_path = os.path.join(self.right_camera_path,
-                                                  rf'0000000{str(self.actual_idx - 1).zfill(3)}.png')
-                r_frame = cv2.imread(pre_right_img_path)
-
-                # disparity map creation
-                left_disp = self.left_matcher.compute(l_frame, r_frame)
-                # right_disp = self.right_matcher.compute(r_frame, l_frame)
-                # result = self.wls_filter.filter(left_disp, l_frame, None, right_disp)
-
-                points_3d = cv2.reprojectImageTo3D(left_disp, self.Q)
-                depth_map = cv2.normalize(left_disp, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-
-                # select valid keypoints
-                p3d_valid, mask = select_points(points_3d, points1)
-                p2d = points2[mask]
-                p3d_valid = p3d_valid.astype(np.float32)
-                p2d = p2d.astype(np.float32)
-                ret, R, t, _ = cv2.solvePnPRansac(p3d_valid, p2d, self.k1, self.d1)
-
-                # find rotation and translation  matrix
-                _, R, t, _ = cv2.solvePnPRansac(p3d_valid, p2d, self.cal_matrix, self.dist_matrix)
-                R, _ = cv2.Rodrigues(R, None)
-                R, t = R.T, -t
+                depth_map = self.step_pnp(points1, points2)
 
             else:
                 raise Exception(f"Method {method_track} not allowed.")
 
-            T = np.vstack([np.hstack([R, t]), [0, 0, 0, 1]])
-            self.pos = T @ self.pos
+            T = np.vstack([np.hstack([self.R, self.t]), [0, 0, 0, 1]])
+            self.pos = T @ self.initial
+            # self.pos = self.t
 
             x, y = self.pos[0][0], self.pos[2][0]
-            if method_track == 'pnp':
-                x = x * 5
-                y = y * 5
-            print(f"{x:.3f}, {y:.3f}")
+            print(f"Position: {x:.3f}, {y:.3f}")
 
             self.pre_kp = actual_kp
             self.pre_des = actual_des
             self.pre_img_path = actual_frame_path
-
             self.actual_idx += 1
 
             # return raw frame, motion frame, and predicted camera position
             return actual_frame_copy, actual_frame, (x, y), depth_map
         else:
             return None, None, None, None
+
+    def step_pnp(self, points1, points2):
+        # load left and right frame
+        l_frame = cv2.imread(self.pre_img_path)
+        pre_right_img_path = os.path.join(self.right_camera_path,
+                                          rf'0000000{str(self.actual_idx - 1).zfill(3)}.png')
+        r_frame = cv2.imread(pre_right_img_path)
+
+        # disparity map creation
+        left_disp = self.left_matcher.compute(l_frame, r_frame) / 16.
+        left_disp = left_disp.astype(np.float32)
+        # right_disp = self.right_matcher.compute(r_frame, l_frame)
+        # result = self.wls_filter.filter(left_disp, l_frame, None, right_disp)
+        points_3d = cv2.reprojectImageTo3D(left_disp, self.Q, handleMissingValues=True)
+
+        # select valid keypoints
+        p3d_valid, mask = select_points(points_3d, points1)
+        p2d = points2[mask]
+        p3d_valid = p3d_valid.astype(np.float32)
+        p2d = p2d.astype(np.float32)
+
+        # find rotation and translation  matrix
+        ret, R, t, _ = cv2.solvePnPRansac(p3d_valid, p2d, self.k1, None, reprojectionError=4.0)
+        R, t = cv2.solvePnPRefineLM(p3d_valid, p2d, self.k1, None, R, t)
+        R, _ = cv2.Rodrigues(R, None)
+        if not ret:
+            print("wrong pred")
+
+        self.R = R @ self.R
+        self.t = self.t + self.R @ t
+        # self.R = R
+        # self.t = t
+
+        return cv2.normalize(left_disp, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+
+    def step_five_points(self, points1, points2):
+        E, mask = cv2.findEssentialMat(points1, points2, self.cal_matrix, method=cv2.RANSAC,
+                                       prob=0.999, threshold=1.0)
+        _, R, t, _ = cv2.recoverPose(E, points1, points2, cameraMatrix=self.cal_matrix, mask=mask)
+        self.t += self.R @ t
+        self.R = R @ self.R
+
+        # self.R = R
+        # self.t = t

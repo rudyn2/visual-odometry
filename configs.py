@@ -32,13 +32,12 @@ class StereoSGBMConfig2:
 
 class MatcherConfig:
     ransac = {
-        'iterations': 15,
-        'max_iterations': 50,
-        'error_threshold': 10,
+        'max_iterations': 5,
+        'error_threshold': 50,
         'min_consensus': 5
     }
     hough = {
-        'dxbin': 60,
-        'dangbin': 30,
+        'dxbin': 100,
+        'dangbin': 50,
         'umbralvotos': 10
     }

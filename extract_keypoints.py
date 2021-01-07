@@ -57,7 +57,10 @@ def extract_keypoints(img_dir: str, output_path: str, method: str):
 
 
 if __name__ == '__main__':
-    img_dir = 'data/2011_09_30/2011_09_30_drive_0020_sync/image_00/data/'
+    date = '2011_09_30'
+    id = '0027'
     detector = 'sift'
-    output_dir = f'keypoints/2011_09_30/2011_09_30_drive_0020_sync/image_00/{detector}_keypoints.pkl'
+
+    img_dir = f'data/{date}/{date}_drive_{id}_sync/image_00/data/'
+    output_dir = f'keypoints/{date}/{date}_drive_{id}_sync/image_00/{detector}_keypoints.pkl'
     extract_keypoints(img_dir, output_dir, detector)

@@ -9,7 +9,7 @@ from compare_calibration import read_real_cal_matrix
 import pickle
 from feature_matching import detect
 from configs import MatcherConfig
-from odometry import filter_kp
+from odometry import matches2list
 
 
 def select_points(p3d, p2d):
@@ -71,7 +71,7 @@ if __name__ == '__main__':
         actual_des = kps[os.path.basename(os.path.join(left_camera_path, f'0000000{str(i).zfill(3)}.png'))]['des']
 
         kp1, kp2, matches = detect(pre_kp, actual_kp, pre_des, actual_des, method='hough', **MatcherConfig.hough)
-        points1, points2 = filter_kp(kp1, kp2, matches)
+        points1, points2 = matches2list(kp1, kp2, matches)
 
         # load left and right frame
         l_frame = cv2.imread(os.path.join(left_camera_path, f'0000000{str(i).zfill(3)}.png'))
