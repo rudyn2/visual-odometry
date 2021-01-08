@@ -6,6 +6,9 @@ import cv2 as cv
 
 
 class SerializableKp:
+    """
+    Helper Class used to serialize opencv keypoints and also to recover them.
+    """
 
     def __init__(self, angle: float, class_id: int, octave: int, pt: tuple, response: float, size: float):
         self.angle = angle

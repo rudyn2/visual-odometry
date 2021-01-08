@@ -11,7 +11,6 @@ from tqdm import tqdm
 def calibrate_chessboards(chessboards: list, visualize: bool = False):
     finder_criteria = cv.CALIB_CB_ADAPTIVE_THRESH + cv.CALIB_CB_NORMALIZE_IMAGE
     total_obj_points, total_image_points = [], []
-    chessboards_points = {}
     total_points = 0
     chess_iter = tqdm(enumerate(chessboards), "Chessboard ")
     for idx, chessboard in chess_iter:

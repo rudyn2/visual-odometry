@@ -5,9 +5,14 @@ import numpy as np
 from odometry import VO
 from extract_keypoints import SerializableKp
 import argparse
+import time
 
 
 def main(v_engine, args):
+    """
+    Simple graphical interface used to visualize the results of the Visual Odometry Class.
+    """
+
     sg.theme("DarkBlue1")
 
     col_1 = [
@@ -41,6 +46,7 @@ def main(v_engine, args):
         pos_gt_0 = np.vstack([pos_gt, 1])
     counter = 1
 
+    trajectory_raw = []
     while pos:
         # handle window events
         event, values = window.read(timeout=20)
@@ -49,6 +55,7 @@ def main(v_engine, args):
 
         # plot predicted trajectory
         x_pos, y_pos = int(pos[0] + x_offset), int(pos[1] + y_offset)
+        trajectory_raw.append((x_pos, y_pos))
         cv2.circle(traj, (x_pos, traj.shape[1] - y_pos), 1, (255, 0, 0), 1)
 
         if lines:
@@ -77,13 +84,16 @@ def main(v_engine, args):
         raw_frame, motion_frame, pos, disparity_map = v_engine.step(args.method_matching, args.method_track)
 
         counter += 1
+
+    cv2.imwrite(f'trajectories/{date}/{date}_drive_{id}_sync/{args.method_matching}-{args.method_track}.png', traj)
+    np.save(f'trajectories/{date}/{date}_drive_{id}_sync/{args.method_matching}-{args.method_track}.npy', trajectory_raw)
     window.close()
 
 
 if __name__ == '__main__':
     from configs import *
     date = '2011_09_26'
-    id = '0005'
+    id = '0001'
 
     video = f'{date}/{date}_drive_{id}_sync'
     keypoints = f'{date}/{date}_drive_{id}_sync/image_00/sift_keypoints.pkl'

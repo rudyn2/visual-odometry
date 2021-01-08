@@ -5,11 +5,20 @@ import numpy as np
 
 from compare_calibration import read_real_cal_matrix
 from extract_keypoints import SerializableKp
-from feature_matching import detect, draw_motion
+from feature_matching import detect, draw_motion, draw_keypoints
 from configs import *
 
 
 def matches2list(kp1: list, kp2: list, matches: list):
+    """
+    Transforms a list of matches to an array of keypoint where each match is defined by its index.
+    :param kp1:                         Set of keypoints in the previous frame.
+    :param kp2:                         Set of keypoints in the actual frame.
+    :param matches:                     Matches.
+    :return: A tuple.
+        1. Numpy array with selected matches in the previous frame.
+        2. Numpy array with selected matches in the actual frame.
+    """
     # list of matches to list of points
     points1, points2 = [None] * len(matches), [None] * len(matches)
     for idx, match in enumerate(matches):
@@ -33,6 +42,10 @@ def select_points(p3d, p2d):
 
 
 class VO:
+
+    """
+    Helper Class used to execute the Visual Odometry Pipeline iteratively.
+    """
     def __init__(self, video: str, cal_path: str, kp_path: str, matcher_config: dict, video_prefix: str = 'data',
                  kp_prefix: str = 'keypoints'):
 
@@ -88,6 +101,17 @@ class VO:
         self.t = np.zeros((3, 1))
 
     def step(self, method_match: str = 'hough', method_track: str = 'five-points'):
+        """
+        Executes one-step prediction of the trajectory using a specific method for matching and a specific
+        method for tracking
+        :param method_match:                   hough or ransac.
+        :param method_track:                   five-points or pnp.
+        :return: A tuple:
+            1. Actual frame.
+            2. Motion frame (contains arrows between each matched pair of points).
+            3. The position as a tuple.
+            4. If PnP is used return the calculated depth map.
+        """
         if self.actual_idx < self.last_frame:
             actual_frame_path = os.path.join(self.left_camera_path, rf'0000000{str(self.actual_idx).zfill(3)}.png')
             actual_frame = cv2.imread(actual_frame_path)
@@ -101,8 +125,9 @@ class VO:
             kp1, kp2, matches = detect(self.pre_kp, actual_kp, self.pre_des, actual_des, method=method_match,
                                        **self.matcher_config)
 
-            # draw motion arrows in actual frame
+            # draw motion arrows and keypoints in actual frame
             draw_motion(actual_frame, kp1, kp2, matches)
+            draw_keypoints(actual_frame_copy, kp2)
 
             # estimate motion
             points1, points2 = matches2list(kp1, kp2, matches)
@@ -134,6 +159,13 @@ class VO:
             return None, None, None, None
 
     def step_pnp(self, points1, points2):
+        """
+        Finds rotation and translation matrix using Perspectiv-n-Point algorithm from a set of matched points.
+        :param points1:                 Set of keypoints.
+        :param points2:                 Another set of keypoints which matches the first one.
+        :return:                        A suitable representation of the calculated depth map.
+        """
+
         # load left and right frame
         l_frame = cv2.imread(self.pre_img_path)
         pre_right_img_path = os.path.join(self.right_camera_path,
@@ -154,25 +186,42 @@ class VO:
         p2d = p2d.astype(np.float32)
 
         # find rotation and translation  matrix
-        ret, R, t, _ = cv2.solvePnPRansac(p3d_valid, p2d, self.k1, None, reprojectionError=4.0)
-        R, t = cv2.solvePnPRefineLM(p3d_valid, p2d, self.k1, None, R, t)
+        ret, R, t, _ = cv2.solvePnPRansac(p3d_valid, p2d, self.k1, None)
+        # R, t = cv2.solvePnPRefineLM(p3d_valid, p2d, self.k1, None, R, t)
         R, _ = cv2.Rodrigues(R, None)
         if not ret:
             print("wrong pred")
 
         self.R = R @ self.R
         self.t = self.t + self.R @ t
-        # self.R = R
-        # self.t = t
-
         return cv2.normalize(left_disp, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
 
     def step_five_points(self, points1, points2):
+        """
+        Finds rotation and translation matrix using Five-Point algorithm from a set of matched points.
+        :param points1:                 Set of keypoints.
+        :param points2:                 Another set of keypoints which matches the first one.
+        """
         E, mask = cv2.findEssentialMat(points1, points2, self.cal_matrix, method=cv2.RANSAC,
                                        prob=0.999, threshold=1.0)
         _, R, t, _ = cv2.recoverPose(E, points1, points2, cameraMatrix=self.cal_matrix, mask=mask)
-        self.t += self.R @ t
-        self.R = R @ self.R
 
-        # self.R = R
-        # self.t = t
+        # scale = self.get_scale(f'data/odometry/poses/07.txt')
+
+        self.R = R @ self.R
+        self.t += self.R @ t
+
+    # def get_scale(self, gt_path: str):
+    #     # ground_truth = f'data/odometry/poses/{ground_truths[date][id]}.txt'
+    #     with open(gt_path, 'r') as f:
+    #         lines = f.readlines()
+    #     pose = lines[self.actual_idx-1].strip().split()
+    #     x_prev = float(pose[3])
+    #     y_prev = float(pose[7])
+    #     z_prev = float(pose[11])
+    #     pose = lines[self.actual_idx].strip().split()
+    #     x = float(pose[3])
+    #     y = float(pose[7])
+    #     z = float(pose[11])
+    #
+    #     return np.sqrt((x - x_prev)*(x - x_prev) + (y - y_prev)*(y - y_prev) + (z - z_prev)*(z - z_prev))

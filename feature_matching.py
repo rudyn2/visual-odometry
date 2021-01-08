@@ -13,8 +13,9 @@ import time
 
 
 def gen_transform(match, keypoints_query, keypoints_reference):
-    # Calcular transformacion de semejanza (e,theta,tx,ty) a partir de un calce "match".
-    # Se debe notar que los keypoints de OpenCV tienen orientacion en grados.
+    """
+    Encuentra los parámetros de una transformación de semejanza entre un par de puntos de un calce específico.
+    """
     kp_query = keypoints_query[match.queryIdx]
     kp_reference = keypoints_reference[match.trainIdx]
 
@@ -28,6 +29,9 @@ def gen_transform(match, keypoints_query, keypoints_reference):
 
 
 def transform_error(e, theta, tx, ty, keypoint_query, keypoint_reference):
+    """
+    Encuentra el error de proyección de un punto dada una transformación dada.
+    """
     theta_rads = np.deg2rad(theta)
     rotation = np.array([[np.cos(theta_rads), -np.sin(theta_rads)],
                          [np.sin(theta_rads), np.cos(theta_rads)]])
@@ -39,6 +43,9 @@ def transform_error(e, theta, tx, ty, keypoint_query, keypoint_reference):
 
 
 def ransac(matches, keypoints_query, keypoints_ref, **kwargs):
+    """
+    RANSAC Feature Matching Algorithm.
+    """
     accepted = []
 
     iterations = 0
@@ -77,6 +84,9 @@ def ransac(matches, keypoints_query, keypoints_ref, **kwargs):
 
 
 def hough4d(matches, keypoints_query, keypoints_reference, **kwargs):
+    """
+    Hough Feature Matching Algorithm.
+    """
     stored = []
     # Parametros de Hough
     dxBin = kwargs['dxbin']
@@ -125,6 +135,9 @@ def adapt_point(x, y):
 
 
 def filter_matches(matches, kp1, kp2):
+    """
+    Aplica el test de razón de Lowe a un conjunto de calces.
+    """
     # Apply ratio test
     points1 = []
     points2 = []
@@ -139,7 +152,10 @@ def filter_matches(matches, kp1, kp2):
 
 
 def detect(kp_ref: list, kp_query: list, des_ref, des_query, method: str = 'hough', base_matcher: str = 'brute-force', save: bool = False, **kwargs):
-
+    """
+    Ejecuta el pipeline de feature matching completo. Desde la generacion de calces por fuerza bruta hasta el filtrado
+    mediante Hough o RANSAC.
+    """
     if base_matcher == 'brute-force':
         matcher = cv2.BFMatcher()
     elif base_matcher == 'flann':
@@ -159,18 +175,27 @@ def detect(kp_ref: list, kp_query: list, des_ref, des_query, method: str = 'houg
         accepted = hough4d(good, kp_query, kp_ref, **kwargs)
     else:
         accepted = good
-    print(f"{method}: {(time.time()-start):.2f} seconds.")
+    print(f"{method}: {(time.time()-start):.3f} seconds.")
 
     return kp_ref, kp_query, accepted
 
 
 def draw_motion(img_to_plot, kp_ref, kp_query, matches, color=(0, 255, 255)):
+    """
+    Dibuja una flecha entre los puntos de cada calce.
+    """
     for match in matches:
         pt2 = tuple(map(int, kp_ref[match.trainIdx].pt))
         pt1 = tuple(map(int, kp_query[match.queryIdx].pt))
         cv2.arrowedLine(img_to_plot, pt1, pt2, color, thickness=1, line_type=cv2.LINE_AA)
-        # cv2.drawKeypoints(img_to_plot, kp_query, img_to_plot, flags=cv2.DRAW_MATCHES_FLAGS_DEFAULT)
     return img_to_plot
+
+
+def draw_keypoints(img_to_plot, keypoints):
+    """
+    Dibuja los keypoints en una imagen.
+    """
+    cv2.drawKeypoints(img_to_plot, keypoints, img_to_plot, flags=cv2.DRAW_MATCHES_FLAGS_DEFAULT)
 
 
 if __name__ == '__main__':
@@ -181,7 +206,7 @@ if __name__ == '__main__':
 
     video = '2011_09_26/2011_09_26_drive_0005_sync/image_00/'
     # video = '2011_09_30/2011_09_30_drive_0016_sync/image_00'
-    with open(os.path.join('keypoints', video, 'sift_keypoints.pkl'), 'rb') as f:
+    with open(os.path.join('keypoints', video, 'orb_keypoints.pkl'), 'rb') as f:
         kps = pickle.load(f)
 
     img_path = os.path.join('data', video, 'data')
@@ -199,7 +224,7 @@ if __name__ == '__main__':
 
         draw_motion(actual_frame, kp1, kp2, matches)
         cv2.imshow('Motion', actual_frame)
-        cv2.waitKey(1)
+        cv2.waitKey(10000)
 
         pre_kp = actual_kp
         pre_des = actual_des

@@ -12,7 +12,7 @@ class StereoSGBMConfig:
     speckle_window_size = 0
     speckle_range = 0
     disp_max_diff = 1
-    mode = cv2.STEREO_SGBM_MODE_SGBM_3WAY
+    mode = cv2.STEREO_SGBM_MODE_SGBM
 
 
 class StereoSGBMConfig2:
